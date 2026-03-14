@@ -112,15 +112,21 @@ wss.on('connection', (ws) => {
        
         const code = msg.roomCode?.toUpperCase();
         const room = rooms.get(code);
-                if (ws.joined) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Csatlakoztál a szobához!' 
-          }));
-          return;
-        }        if (!room) {
-          ws.send(JSON.stringify({ type: 'error', message: 'A szoba nem található!' 
-          }));
+
+        if (ws.joined) {
+          ws.send(
+            JSON.stringify({ type: 'error', message: 'Csatlakoztál a szobához!' })
+          );
           return;
         }
+
+        if (!room) {
+          ws.send(
+            JSON.stringify({ type: 'error', message: 'A szoba nem található!' })
+          );
+          return;
+        }
+
         if (room.winner) {
           ws.send(JSON.stringify({ type: 'error', message: 'Ez a játék már véget ért!' }));
           return;
@@ -143,9 +149,9 @@ wss.on('connection', (ws) => {
         ws.joined = true;
         currentRoom = code;
         
-        broadcastToRoom(currentRoom,{
+        broadcastToRoom(currentRoom, {
           type: "players_update",
-            players: getPlayerList(currentRoom) 
+          players: getPlayerList(currentRoom) 
         });
 
         ws.send(
@@ -172,80 +178,53 @@ wss.on('connection', (ws) => {
       }
 
       case 'start_game': {
-if (!currentRoom) return;
-const room = rooms.get(currentRoom);
-if (!room) return;
+        if (!currentRoom) return;
+        const room = rooms.get(currentRoom);
+        if (!room) return;
 
-room.started = true;
+        room.started = true;
 
-broadcastToRoom(currentRoom, {
-type: 'game_started',
-word: room.word,
-players: getPlayerList(currentRoom),
-});
+        broadcastToRoom(currentRoom, {
+          type: 'game_started',
+          word: room.word,
+          players: getPlayerList(currentRoom),
+        });
 
-break;
-}
+        break;
+      }
 
-case 'guess': {
-if (!currentRoom) return;
-const room = rooms.get(currentRoom);
-if (!room) return;
+      case 'guess': {
+        if (!currentRoom) return;
+        const room = rooms.get(currentRoom);
+        if (!room) return;
 
-const player = room.players.find((p) => p.id === playerId);
-if (!player) return;
+        const player = room.players.find((p) => p.id === playerId);
+        if (!player) return;
 
-player.guesses = msg.guessCount;
-player.solved = msg.solved || false;
-player.failed = msg.failed || false;
+        player.guesses = msg.guessCount;
+        player.solved = msg.solved || false;
+        player.failed = msg.failed || false;
 
-if (msg.solved && !room.winner) {
-room.winner = playerId;
+        if (msg.solved && !room.winner) {
+          room.winner = playerId;
 
-broadcastToRoom(currentRoom, {
-type: 'game_over',
-winnerId: playerId,
-winnerName: playerName,
-players: getPlayerList(currentRoom),
-});
-} else {
-broadcastToRoom(
-currentRoom,
-{
-type: 'player_update',
-players: getPlayerList(currentRoom),
-},
-ws
-);
-}
+          broadcastToRoom(currentRoom, {
+            type: 'game_over',
+            winnerId: playerId,
+            winnerName: playerName,
+            players: getPlayerList(currentRoom),
+          });
+        } else {
+          broadcastToRoom(
+            currentRoom,
+            {
+              type: 'player_update',
+              players: getPlayerList(currentRoom),
+            },
+            ws
+          );
+        }
 
-break;
-}
-
-case 'next_round': {
-const room = rooms.get(currentRoom);
-if (!room) break;
-
-room.currentRound += 1;
-
-room.players.forEach((p) => {
-p.solved = false;
-p.failed = false;
-p.guesses = 0;
-});
-
-broadcastToRoom(
-currentRoom,
-{
-type: 'new_round',
-round: room.currentRound,
-players: getPlayerList(currentRoom),
-},
-ws
-);
-
-break;
-}
         // Check if all players are done
         const allDone = room.players.every((p) => p.solved || p.failed);
         if (allDone && !room.winner) {
@@ -256,9 +235,35 @@ break;
             players: getPlayerList(currentRoom),
           });
         }
+
         break;
       }
 
+      case 'next_round': {
+        const room = rooms.get(currentRoom);
+        if (!room) break;
+
+        room.round += 1;
+        room.winner = null;
+
+        room.players.forEach((p) => {
+          p.solved = false;
+          p.failed = false;
+          p.guesses = 0;
+        });
+
+        broadcastToRoom(
+          currentRoom,
+          {
+            type: 'new_round',
+            round: room.round,
+            players: getPlayerList(currentRoom),
+          },
+          ws
+        );
+
+        break;
+      }
       case 'ping': {
         ws.send(JSON.stringify({ type: 'pong' }));
         break;
