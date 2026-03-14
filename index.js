@@ -111,7 +111,7 @@ wss.on('connection', (ws) => {
         const code = msg.roomCode?.toUpperCase();
         const room = rooms.get(code);
                 if (ws.joined) {
-          ws.send(JSON.stringify({ type: 'error', message: Csatlakoztál a szobához!' 
+          ws.send(JSON.stringify({ type: 'error', message: 'Csatlakoztál a szobához!' 
           }));
           return;
         }        if (!room) {
