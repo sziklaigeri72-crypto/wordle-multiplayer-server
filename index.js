@@ -90,6 +90,8 @@ wss.on('connection', (ws) => {
           ],
           started: false,
           winner: null,
+          round: 1,
+          maxRounds: 5,
           createdAt: Date.now(),
         };
         rooms.set(code, room);
