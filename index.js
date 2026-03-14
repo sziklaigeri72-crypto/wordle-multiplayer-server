@@ -230,7 +230,7 @@ wss.on('connection', (ws) => {
          });
          broadcastToRoom(
            currentRoom,
-           }
+           {
              type: 'new_round',
              round: room.currentRound,
              players: getPlayerList(currentRoom),
