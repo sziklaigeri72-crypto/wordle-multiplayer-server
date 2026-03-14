@@ -56,6 +56,9 @@ const wss = new WebSocketServer({ server });
 let nextPlayerId = 1;
 
 wss.on('connection', (ws) => {
+  
+  ws.joined = false;
+
   const playerId = `player_${nextPlayerId++}`;
   let currentRoom = null;
   let playerName = '';
@@ -104,10 +107,16 @@ wss.on('connection', (ws) => {
       }
 
       case 'join_room': {
+       
         const code = msg.roomCode?.toUpperCase();
         const room = rooms.get(code);
-        if (!room) {
-          ws.send(JSON.stringify({ type: 'error', message: 'A szoba nem található!' }));
+                if (ws.joined) {
+          ws.send(JSON.stringify({ type: 'error', message: Csatlakoztál a szobához!' 
+          }));
+          return;
+        }        if (!room) {
+          ws.send(JSON.stringify({ type: 'error', message: 'A szoba nem található!' 
+          }));
           return;
         }
         if (room.winner) {
