@@ -140,6 +140,11 @@ wss.on('connection', (ws) => {
         
         ws.joined = true;
         currentRoom = code;
+        
+        broadcastToRoom(currentRoom,{
+          type: "players_update"
+            players: getPlayerList(currentRoom) 
+        });
 
         ws.send(
           JSON.stringify({
