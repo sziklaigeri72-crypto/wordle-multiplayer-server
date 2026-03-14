@@ -137,6 +137,8 @@ wss.on('connection', (ws) => {
           solved: false,
           failed: false,
         });
+        
+        ws.joined = true;
         currentRoom = code;
 
         ws.send(
