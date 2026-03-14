@@ -142,7 +142,7 @@ wss.on('connection', (ws) => {
         currentRoom = code;
         
         broadcastToRoom(currentRoom,{
-          type: "players_update"
+          type: "players_update",
             players: getPlayerList(currentRoom) 
         });
 
