@@ -214,7 +214,33 @@ wss.on('connection', (ws) => {
             ws
           );
         }
-
+        break;
+      }
+        
+        case 'next_round': {
+        const room = rooms.get(currentRoom);
+        if (!room) break;
+        
+        room.currentRound += 1;
+        
+        room.players.forEach((p) => {
+           p.solved = false;
+           p.failed = false;
+           p.guesses = 0;
+         });
+         broadcastToRoom(
+           currentRoom,
+           }
+             type: 'new_round',
+             round: room.currentRound,
+             players: getPlayerList(currentRoom),
+           },
+           ws
+         );
+  
+         break;
+       } 
+        
         // Check if all players are done
         const allDone = room.players.every((p) => p.solved || p.failed);
         if (allDone && !room.winner) {
