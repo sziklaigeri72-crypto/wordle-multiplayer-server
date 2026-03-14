@@ -56,9 +56,7 @@ const wss = new WebSocketServer({ server });
 let nextPlayerId = 1;
 
 wss.on('connection', (ws) => {
-  
   ws.joined = false;
-
   const playerId = `player_${nextPlayerId++}`;
   let currentRoom = null;
   let playerName = '';
@@ -109,28 +107,19 @@ wss.on('connection', (ws) => {
       }
 
       case 'join_room': {
-       
         const code = msg.roomCode?.toUpperCase();
         const room = rooms.get(code);
 
         if (ws.joined) {
-          ws.send(
-            JSON.stringify({ type: 'error', message: 'Csatlakoztál a szobához!' })
-          );
+          ws.send(JSON.stringify({ type: 'error', message: 'Csatlakoztál a szobához!' }));
           return;
         }
 
         if (!room) {
-          ws.send(
-            JSON.stringify({ type: 'error', message: 'A szoba nem található!' })
-          );
+          ws.send(JSON.stringify({ type: 'error', message: 'A szoba nem található!' }));
           return;
         }
 
-        if (room.winner) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Ez a játék már véget ért!' }));
-          return;
-        }
         if (room.players.length >= 8) {
           ws.send(JSON.stringify({ type: 'error', message: 'A szoba megtelt! (max 8 játékos)' }));
           return;
@@ -165,15 +154,11 @@ wss.on('connection', (ws) => {
           })
         );
 
-        broadcastToRoom(
-          code,
-          {
-            type: 'player_joined',
-            players: getPlayerList(code),
-            playerName,
-          },
-          ws
-        );
+        broadcastToRoom(code, {
+          type: 'player_joined',
+          players: getPlayerList(code),
+          playerName,
+        }, ws);
         break;
       }
 
@@ -181,15 +166,12 @@ wss.on('connection', (ws) => {
         if (!currentRoom) return;
         const room = rooms.get(currentRoom);
         if (!room) return;
-
         room.started = true;
-
         broadcastToRoom(currentRoom, {
           type: 'game_started',
           word: room.word,
           players: getPlayerList(currentRoom),
         });
-
         break;
       }
 
@@ -207,7 +189,6 @@ wss.on('connection', (ws) => {
 
         if (msg.solved && !room.winner) {
           room.winner = playerId;
-
           broadcastToRoom(currentRoom, {
             type: 'game_over',
             winnerId: playerId,
@@ -215,17 +196,12 @@ wss.on('connection', (ws) => {
             players: getPlayerList(currentRoom),
           });
         } else {
-          broadcastToRoom(
-            currentRoom,
-            {
-              type: 'player_update',
-              players: getPlayerList(currentRoom),
-            },
-            ws
-          );
+          broadcastToRoom(currentRoom, {
+            type: 'player_update',
+            players: getPlayerList(currentRoom),
+          }, ws);
         }
 
-        // Check if all players are done
         const allDone = room.players.every((p) => p.solved || p.failed);
         if (allDone && !room.winner) {
           broadcastToRoom(currentRoom, {
@@ -235,7 +211,6 @@ wss.on('connection', (ws) => {
             players: getPlayerList(currentRoom),
           });
         }
-
         break;
       }
 
@@ -245,6 +220,7 @@ wss.on('connection', (ws) => {
 
         room.round += 1;
         room.winner = null;
+        if (msg.word) room.word = msg.word; // Update word for new round
 
         room.players.forEach((p) => {
           p.solved = false;
@@ -252,18 +228,15 @@ wss.on('connection', (ws) => {
           p.guesses = 0;
         });
 
-        broadcastToRoom(
-          currentRoom,
-          {
-            type: 'new_round',
-            round: room.round,
-            players: getPlayerList(currentRoom),
-          },
-          ws
-        );
-
+        broadcastToRoom(currentRoom, {
+          type: 'new_round',
+          round: room.round,
+          word: room.word, // Send new word to everyone
+          players: getPlayerList(currentRoom),
+        });
         break;
       }
+
       case 'ping': {
         ws.send(JSON.stringify({ type: 'pong' }));
         break;
@@ -291,7 +264,6 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`WebSocket server running on port ${PORT}`);
 });
 
-// Cleanup old rooms every 30 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms) {
