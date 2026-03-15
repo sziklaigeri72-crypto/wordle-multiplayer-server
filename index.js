@@ -233,7 +233,7 @@ p.guesses = 0;
 
 broadcastToRoom(currentRoom, {
 type: 'new_round',
-round: room.round,
+round: room.currentRound,
 word: room.word,
 players: getPlayerList(currentRoom),
 });
