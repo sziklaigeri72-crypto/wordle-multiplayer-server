@@ -219,6 +219,7 @@ wss.on('connection', (ws) => {
         if (!room) break;
 
         room.round += 1;
+        room.word = getRandomWord();
         room.winner = null;
         if (msg.word) room.word = msg.word; // Update word for new round
 
