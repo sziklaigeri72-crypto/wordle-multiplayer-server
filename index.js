@@ -215,28 +215,31 @@ wss.on('connection', (ws) => {
       }
 
       case 'next_round': {
-        const room = rooms.get(currentRoom);
-        if (!room) break;
+const room = rooms.get(currentRoom);
+if (!room) break;
 
-        room.round += 1;
-        room.word = getRandomWord();
-        room.winner = null;
-        if (msg.word) room.word = msg.word; // Update word for new round
+room.round = (room.round || 0) + 1;
+room.winner = null;
 
-        room.players.forEach((p) => {
-          p.solved = false;
-          p.failed = false;
-          p.guesses = 0;
-        });
+if (msg.word) {
+room.word = msg.word;
+}
 
-        broadcastToRoom(currentRoom, {
-          type: 'new_round',
-          round: room.round,
-          word: room.word, // Send new word to everyone
-          players: getPlayerList(currentRoom),
-        });
-        break;
-      }
+room.players.forEach((p) => {
+p.solved = false;
+p.failed = false;
+p.guesses = 0;
+});
+
+broadcastToRoom(currentRoom, {
+type: 'new_round',
+round: room.round,
+word: room.word,
+players: getPlayerList(currentRoom),
+});
+
+break;
+}
 
       case 'ping': {
         ws.send(JSON.stringify({ type: 'pong' }));
