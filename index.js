@@ -253,7 +253,7 @@ wss.on('connection', (ws) => {
         break;
       }
 
-      case 'next_round': {
+      case 'new_round': {
         const room = rooms.get(currentRoom);
         if (!room) break;
 
