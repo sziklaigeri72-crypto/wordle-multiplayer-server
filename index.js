@@ -2,7 +2,6 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 
 const PORT = 8000;
-const MAX_GUESSES = 6; // Standard Wordle max guesses
 
 // Room storage (in-memory)
 const rooms = new Map();
@@ -27,6 +26,17 @@ function broadcastToRoom(roomCode, message, excludeWs = null) {
   });
 }
 
+function sendToRoom(roomCode, message) {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+  const data = JSON.stringify(message);
+  room.players.forEach((player) => {
+    if (player.ws.readyState === 1) {
+      player.ws.send(data);
+    }
+  });
+}
+
 function getPlayerList(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return [];
@@ -38,13 +48,16 @@ function getPlayerList(roomCode) {
     failed: p.failed,
     score: p.score || 0,
     totalScore: p.totalScore || 0,
+    roundScore: p.roundScore || 0,
   }));
 }
 
-function calculateRoundScore(guessCount, solved) {
-  if (!solved) return 0;
-  // Fewer guesses = more points. Solved in 1 guess = 6 pts, 2 = 5 pts, ... 6 = 1 pt
-  return Math.max(0, MAX_GUESSES + 1 - guessCount);
+function calculateRoundScore(player) {
+  if (player.solved) {
+    // Base score for solving: 100, bonus for fewer guesses
+    return Math.max(10, 100 - (player.guesses - 1) * 15);
+  }
+  return 0;
 }
 
 function cleanupRoom(roomCode) {
@@ -66,6 +79,7 @@ let nextPlayerId = 1;
 
 wss.on('connection', (ws) => {
   ws.joined = false;
+
   const playerId = `player_${nextPlayerId++}`;
   let currentRoom = null;
   let playerName = '';
@@ -96,6 +110,7 @@ wss.on('connection', (ws) => {
               failed: false,
               score: 0,
               totalScore: 0,
+              roundScore: 0,
             },
           ],
           started: false,
@@ -106,6 +121,7 @@ wss.on('connection', (ws) => {
         };
         rooms.set(code, room);
         currentRoom = code;
+        ws.joined = true;
 
         ws.send(
           JSON.stringify({
@@ -113,8 +129,6 @@ wss.on('connection', (ws) => {
             roomCode: code,
             playerId,
             players: getPlayerList(code),
-            round: room.round,
-            maxRounds: room.maxRounds,
           })
         );
         break;
@@ -125,17 +139,31 @@ wss.on('connection', (ws) => {
         const room = rooms.get(code);
 
         if (ws.joined) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Csatlakoztál a szobához!' }));
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              message: 'Már csatlakoztál a szobához!',
+            })
+          );
           return;
         }
 
         if (!room) {
-          ws.send(JSON.stringify({ type: 'error', message: 'A szoba nem található!' }));
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              message: 'A szoba nem található!',
+            })
+          );
           return;
         }
-
         if (room.players.length >= 8) {
-          ws.send(JSON.stringify({ type: 'error', message: 'A szoba megtelt! (max 8 játékos)' }));
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              message: 'A szoba megtelt! (max 8 játékos)',
+            })
+          );
           return;
         }
 
@@ -149,33 +177,28 @@ wss.on('connection', (ws) => {
           failed: false,
           score: 0,
           totalScore: 0,
+          roundScore: 0,
         });
-
-        ws.joined = true;
         currentRoom = code;
-
-        broadcastToRoom(currentRoom, {
-          type: 'players_update',
-          players: getPlayerList(currentRoom),
-        });
+        ws.joined = true;
 
         ws.send(
           JSON.stringify({
             type: 'room_joined',
             roomCode: code,
             playerId,
-            word: room.word,
+            word: room.started ? room.word : null,
             players: getPlayerList(code),
             started: room.started,
-            round: room.round,
-            maxRounds: room.maxRounds,
+            round: room.round || 1,
+            maxRounds: room.maxRounds || 5,
           })
         );
 
         broadcastToRoom(
           code,
           {
-            type: 'player_joined',
+            type: 'players_update',
             players: getPlayerList(code),
             playerName,
           },
@@ -189,7 +212,19 @@ wss.on('connection', (ws) => {
         const room = rooms.get(currentRoom);
         if (!room) return;
         room.started = true;
-        broadcastToRoom(currentRoom, {
+        room.round = 1;
+
+        // Reset all players for the first round
+        room.players.forEach((p) => {
+          p.guesses = 0;
+          p.solved = false;
+          p.failed = false;
+          p.score = 0;
+          p.totalScore = 0;
+          p.roundScore = 0;
+        });
+
+        sendToRoom(currentRoom, {
           type: 'game_started',
           word: room.word,
           players: getPlayerList(currentRoom),
@@ -211,40 +246,36 @@ wss.on('connection', (ws) => {
         player.solved = msg.solved || false;
         player.failed = msg.failed || false;
 
-        // Calculate round score when player finishes (solved or failed)
-        if (msg.solved || msg.failed) {
-          player.score = calculateRoundScore(msg.guessCount, msg.solved);
-          player.totalScore = (player.totalScore || 0) + player.score;
+        // Calculate round score when player finishes
+        if (player.solved || player.failed) {
+          player.roundScore = calculateRoundScore(player);
+          player.score = player.roundScore;
+          player.totalScore = (player.totalScore || 0) + player.roundScore;
         }
 
-        if (msg.solved && !room.winner) {
-          room.winner = playerId;
-          broadcastToRoom(currentRoom, {
-            type: 'game_over',
-            winnerId: playerId,
-            winnerName: playerName,
-            players: getPlayerList(currentRoom),
-            round: room.round,
-            maxRounds: room.maxRounds,
-          });
-        } else {
-          broadcastToRoom(
-            currentRoom,
-            {
-              type: 'player_update',
-              players: getPlayerList(currentRoom),
-            },
-            ws
-          );
-        }
+        // Broadcast updated player list to everyone
+        sendToRoom(currentRoom, {
+          type: 'player_update',
+          players: getPlayerList(currentRoom),
+        });
 
         // Check if all players are done
         const allDone = room.players.every((p) => p.solved || p.failed);
-        if (allDone && !room.winner) {
-          broadcastToRoom(currentRoom, {
+        if (allDone) {
+          // Find the winner of this round (highest round score)
+          let bestPlayer = null;
+          let bestScore = -1;
+          room.players.forEach((p) => {
+            if (p.roundScore > bestScore) {
+              bestScore = p.roundScore;
+              bestPlayer = p;
+            }
+          });
+
+          sendToRoom(currentRoom, {
             type: 'game_over',
-            winnerId: null,
-            winnerName: null,
+            winnerId: bestPlayer && bestPlayer.roundScore > 0 ? bestPlayer.id : null,
+            winnerName: bestPlayer && bestPlayer.roundScore > 0 ? bestPlayer.name : null,
             players: getPlayerList(currentRoom),
             round: room.round,
             maxRounds: room.maxRounds,
@@ -253,55 +284,53 @@ wss.on('connection', (ws) => {
         break;
       }
 
-      case 'new_round': {
+      case 'next_round': {
+        if (!currentRoom) return;
         const room = rooms.get(currentRoom);
-        if (!room) break;
+        if (!room) return;
 
+        // Increment round
         room.round = (room.round || 1) + 1;
+        room.word = msg.word;
         room.winner = null;
 
-        if (msg.word) {
-          room.word = msg.word;
-        }
+        // Reset player round state but keep totalScore
+        room.players.forEach((p) => {
+          p.guesses = 0;
+          p.solved = false;
+          p.failed = false;
+          p.roundScore = 0;
+          p.score = 0;
+        });
 
-        // Check if this was the last round
-        if (room.round > room.maxRounds) {
-          // Find the overall winner (highest totalScore)
+        // Check if game is completely over (all rounds played)
+        if (room.round > (room.maxRounds || 5)) {
+          // Find overall winner by totalScore
           let bestPlayer = null;
-          let bestScore = -1;
+          let bestTotal = -1;
           room.players.forEach((p) => {
-            if ((p.totalScore || 0) > bestScore) {
-              bestScore = p.totalScore || 0;
+            if (p.totalScore > bestTotal) {
+              bestTotal = p.totalScore;
               bestPlayer = p;
             }
           });
 
-          broadcastToRoom(currentRoom, {
-            type: 'final_game_over',
-            players: getPlayerList(currentRoom),
+          sendToRoom(currentRoom, {
+            type: 'game_finished',
             winnerId: bestPlayer ? bestPlayer.id : null,
             winnerName: bestPlayer ? bestPlayer.name : null,
-            totalRounds: room.maxRounds,
+            players: getPlayerList(currentRoom),
           });
-          break;
+          return;
         }
 
-        // Reset per-round state but KEEP totalScore
-        room.players.forEach((p) => {
-          p.solved = false;
-          p.failed = false;
-          p.guesses = 0;
-          p.score = 0; // Reset round score, totalScore stays
-        });
-
-        broadcastToRoom(currentRoom, {
+        sendToRoom(currentRoom, {
           type: 'new_round',
+          word: room.word,
           round: room.round,
           maxRounds: room.maxRounds,
-          word: room.word,
           players: getPlayerList(currentRoom),
         });
-
         break;
       }
 
@@ -318,7 +347,7 @@ wss.on('connection', (ws) => {
       if (room) {
         room.players = room.players.filter((p) => p.id !== playerId);
         broadcastToRoom(currentRoom, {
-          type: 'player_left',
+          type: 'players_update',
           players: getPlayerList(currentRoom),
           playerName,
         });
@@ -332,6 +361,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`WebSocket server running on port ${PORT}`);
 });
 
+// Cleanup old rooms every 30 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms) {
